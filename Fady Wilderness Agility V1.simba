@@ -1,0 +1,585 @@
+program FadyWildernessAgility;
+{$DEFINE SMART}
+{$I SRL-6/SRL.Simba}
+{$I SPS/lib/SPS-RS3.Simba}
+{$i SRL-6/LIB/MISC/SRLPLAYERFORM.simba}
+
+{*
+               JUST PRESS PLAY AND FILL OUT THE FORM
+               JUST PRESS PLAY AND FILL OUT THE FORM
+               JUST PRESS PLAY AND FILL OUT THE FORM
+               JUST PRESS PLAY AND FILL OUT THE FORM
+               JUST PRESS PLAY AND FILL OUT THE FORM
+               JUST PRESS PLAY AND FILL OUT THE FORM
+               JUST PRESS PLAY AND FILL OUT THE FORM
+               JUST PRESS PLAY AND FILL OUT THE FORM
+                                                                     *}
+
+
+Const
+{*Local Version*}
+  Local_Version := 1.0;
+
+{*These constants contain the information related to the various obstacles
+  Only Modify these if the script stops working and you know what you're doing*}
+
+{*Obstacle Pipe data*}
+  PipeCol := 6180404;
+  pipeTol := 14;
+  pipeHue := 0.14;
+  pipeSat := 0.30;
+  pipeObjW := 25;
+  pipeObjH := 25;
+
+{*Swing Rope *}
+  ropeCol := 794145;
+  ropeTol := 2;
+  ropeHue := 0.64;
+  ropeSat := 4.11;
+  ropeObjW := 6;
+  ropeObjH := 40;
+  ropePoint := point(204+randomRange(-2,2),107+randomRange(-2,2));
+
+{*Lava Steps data*}
+  lavaCol := 2107538;
+  lavaTol := 17;
+  lavaHue := 0.07;
+  lavaSat := 0.32;
+  lavaObjW := 10;
+  lavaObjH := 10;
+
+{*Wooden Log data*}
+  logCol := 4209978;
+  logTol := 3;
+  logHue := 1.67;
+  logSat := 0.79;
+  logObjW := 12;
+  logObjH := 15;
+  logPoint := point(190+randomRange(-2,2),127+randomRange(-2,2));
+
+{*Dungeon Ladder data*}
+  ladderCol := 3556941;
+  ladderTol := 7;
+  ladderHue := 0.28;
+  ladderSat := 0.81;
+  ladderObjW := 20;
+  ladderObjH := 50;
+
+Type TObstacleType = record
+  Name : String;
+  Color, Tol, ObjW, ObjH: Integer;
+  ColSettings: TColorSettings;
+  OverText: TStringArray;
+  recoverPoint: TPoint;
+end;
+
+var
+  b, BreakTime,lapsDone, preHeal: integer;
+  xpGained: extended;
+  surface,dungeon: TSPSArea;
+  outOfFood: Boolean;
+  pipe, rope, lava, log, ladder: TObstacleType;
+
+procedure initPlayerForm();
+begin
+  with playerForm do
+  begin
+    name := 'Wilderness Agility';
+    scriptHelpThread := 'https://villavu.com/forum/showthread.php?t=113782';
+
+    editBoxLabels := ['Preferred World','Play time Till Break','Break Duration','Laps to do','Food Key','Antiban Chance'];
+    editBoxDefaults := ['0','60','10','5000','2','2400'];
+    editBoxHints := [
+    'Pick a world or 0 for random or -1 for "Play Now"',
+    'Amount of time in minutes till a break is called',
+    'How long you want your breaks to be, also in minutes',
+    'How many laps do you want to do',
+    'Where is the food located on the actionbar',
+    'The larger the number the lower the chance of antiban'];
+
+    checkBoxLabels := ['Disable SRL Debug?', 'Disable Script Debug?'];
+    checkBoxDefaults := ['True','True'];
+    checkBoxHints := [
+    'Do you want to Disable SRL Debug?',
+    'Do you want to Disable the Script Debug?'];
+
+  end;
+end;
+
+procedure declarePlayers();
+var
+  i: integer;
+begin
+  players.setup(playerForm.players);
+  currentPlayer := 0;
+
+  for i := 0 to high(players) do
+    with players[i] do
+    begin
+      integers[0] := strToInt(playerForm.players[i].settings[0]);
+      integers[1] := strToInt(playerForm.players[i].settings[1]);
+      integers[2] := strToInt(playerForm.players[i].settings[2]);
+      integers[3] := strToInt(playerForm.players[i].settings[3]);
+      integers[4] := strToInt(playerForm.players[i].settings[5]);
+
+      booleans[0] := strToBool(playerForm.players[i].settings[6]);
+      booleans[1] := strToBool(playerForm.players[i].settings[7]);
+
+      strings[0] := playerForm.players[i].settings[4];
+
+      world := integers[0];
+    end;
+end;
+
+procedure TObstacleType.init(_Name: String; _Color, _Tol, _ObjW, _ObjH: Integer; _ColSettings: TColorSettings; _OverText: TStringArray; _recoverPoint: TPoint);
+begin
+  Self.Name := _Name;
+  Self.Color := _Color;
+  Self.Tol := _Tol;
+  Self.ObjW := _ObjW;
+  self.ObjH := _ObjH;
+  Self.ColSettings := _ColSettings;
+  Self.OverText := _OverText;
+  Self.recoverPoint := _recoverPoint;
+end;
+
+procedure loadStuff();    //Sets up the various obstacles and maps.
+begin
+  pipe.init('Obstacle Pipe',pipeCol,pipeTol,pipeObjW,pipeObjH,colorSetting(2,pipeHue,pipeSat),['queeze-through','ough Obstacle'],point(0,0));
+  rope.init('Swing Rope',ropeCol,ropeTol,ropeObjW,ropeObjH,colorSetting(2,ropeHue,ropeSat),['wing-on','on Ropeswing'],ropePoint);
+  lava.init('Lava Steps',lavaCol,lavaTol,lavaObjW,lavaObjH,colorSetting(2,lavaHue,lavaSat),['ross Stepping','pping stone'],point(0,0));
+  log.init('Wooden Log',logCol,logTol,logObjW,logObjH,colorSetting(2,logHue,logSat),['alk-across','oss Log','og balance'],logPoint);
+  ladder.init('Dungeon Ladder',ladderCol,ladderTol,ladderObjW,ladderObjH,colorSetting(2,ladderHue,ladderSat),['limb-up','up Ladder'],point(0,0));
+  surface.setup('CourseSurface_0', RUNESCAPE_SURFACE);
+  dungeon.setup('CourseDungeon_0', RUNESCAPE_SURFACE);
+end;
+
+procedure sDebug(Text: string);
+begin
+  if not players[currentPlayer].booleans[1] then
+    writeLn(Text);
+end;
+
+procedure resetBreakTimer();                //Adapted from The Mayor's VEB Miner
+var
+  ran: Integer;
+begin
+  ran := round((players[currentPlayer].integers[1] * 60000) * 0.1);
+  BreakTime := (getSystemTime() + (players[currentPlayer].integers[1] * 60000) + randomRange(-ran, ran));
+end;
+
+procedure LoginProcedure();
+begin
+  if not isLoggedin() then
+    players[currentPlayer].login();   // Log them in
+  closePollWindow();
+  exitTreasure();            // Exit treasure hunter
+  wait(gaussRangeInt(800, 1200));
+  minimap.clickCompass();
+  mainscreen.setAngle(MS_ANGLE_HIGH);
+end;
+
+{*Clicks the Various Obstacles, returns True if successful*}
+function TObstacleType.Click(): Boolean;
+var
+  x, y, i: integer;
+  TPA: TPointArray;
+  ATPA: T2DPointArray;
+  logBox : array [0..10] of TBox;
+  logMidPoint: TPoint;
+begin
+  sDebug('Looking for the colors of the '+self.Name);
+  findColorsSpiralTolerance(x, y, TPA, self.Color, mainscreen.getBounds, self.Tol, self.ColSettings);
+
+  TPA.excludePointsDist(0,185,mainscreen.playerPoint.X,mainscreen.playerPoint.Y);
+  ATPA := TPA.toATPA(self.ObjW,self.ObjH);
+  ATPA.sortFromMidPoint(mainscreen.playerPoint);
+  FilterTPAsBetween(ATPA,1,20);
+
+  if (Length(ATPA) <1) then
+  begin
+    sDebug('Failed to find enough colors for the '+self.name);
+    exit(false);
+  end;
+
+    for i := 0 to high(ATPA) do
+    begin
+      if (self.Name = 'Wooden Log') then
+      begin
+        logMidPoint := middleTPA(ATPA[i]);
+        logBox[i] := intToBox(logMidPoint.X-20,logMidPoint.Y-10,logMidPoint.X+3,logMidPoint.Y+10);
+        mouseBox(logBox[i],MOUSE_MOVE);
+      end else
+        mouse(ATPA[i].getBounds().getRandomPoint());
+      wait(gaussRangeInt(80,150));
+      if isMouseOverText(self.OverText) then
+      begin
+        fastClick(Mouse_Left);
+        result := True;
+        break;
+      end;
+    end;
+  sDebug('Result of click attempt on '+self.Name+' was: '+toStr(result));
+end;
+
+{*Checks the Health of the Character, heals if less then 70%*}
+procedure checkHealth();
+begin
+  if (not outOfFood) and (actionbar.getHPPercent < 70) then
+    begin
+      preHeal := actionbar.getHPPercent;
+      typeSend(players[currentPlayer].strings[0],false);
+    end;
+end;
+
+{*Recovers from the Dungeon after failing an Obstacle, returns True if successful*}
+function TObstacleType.recover(): Boolean;
+var
+  recoverTimer: TTimeMarker;
+  p: TPoint;
+begin
+  result := false;
+  if minimap.findSymbol(p,MM_SYMBOL_DUNGEON,minimap.getBounds()) then
+    exit(True);
+
+  sDebug('We have fallen into the pit after failing the '+self.Name+' attempting to recover');
+  minimap.waitPlayerMoving(500);
+  checkHealth();
+  recoverTimer.start
+  repeat
+    if not (distance(point(213,112),dungeon.getPlayerPos()) < 50) then
+      if dungeon.walkToPos(point(213+randomRange(-2,2),112+randomRange(-2,2)),dungeon.getPlayerPos(),true,300) then
+        sDebug('Walked successfuly to the ladder');
+    if ladder.Click then
+      repeat
+        wait(gaussRangeInt(200,500));
+        if (minimap.findSymbol(p,MM_SYMBOL_DUNGEON,minimap.getBounds())) then
+        begin
+          if (not outOfFood) and (not (actionbar.getHPPercent > preHeal)) then
+          begin
+            outOfFood := true;
+            sDebug('We have run out of food');
+          end;
+          sDebug('We have succesfully come back to the surface');
+          wait(gaussRangeInt(200,500));
+          surface.walkToPos(self.recoverPoint,surface.getPlayerPos,false);
+          if minimap.isPlayerMoving(1500) then
+            minimap.waitPlayerMoving(250);
+          exit(true);
+        end;
+      until (recoverTimer.getTime > 45000);
+  until (recoverTimer.getTime > 45000);
+  if (recoverTimer.getTime > 45000) then
+  begin
+    writeLn('Failed to Recover after failing the '+self.Name+', terminating');
+    terminateScript();
+  end;
+end;
+
+{*Simple Progress Report*}
+procedure progressReport();
+begin
+  clearDebug;
+  writeLn('XP Gained: '+toStr(xpGained));
+  writeLn('XP/HR: ' +toStr(round(xpGained/(getTimeRunning/3600000))));
+  writeLn('Laps Done: '+toStr(lapsDone));
+  writeln('Time Running: ' +timeRunning);
+  writeln('Breaks Taken: ' +toStr(b));
+end;
+
+{*Clicks the obstacle pipe, and waits until the character has reached the end*}
+procedure courseStart();
+var
+  pipeTimer:TTimeMarker;
+begin
+  pipeTimer.start();
+  repeat
+    if pipe.Click() then
+      repeat
+        wait(gaussRangeInt(200,500));
+      until (surface.isInBox(intToBox(193,107,207,115))) or (pipeTimer.getTime > 30000);
+  until (surface.isInBox(intToBox(193,107,207,115))) or (pipeTimer.getTime > 30000);
+  if pipeTimer.getTime > 30000 then
+  begin
+    writeLn('Took too long to complete the '+pipe.Name+', terminating');
+    terminateScript();
+  end;
+  sDebug('We have successfuly passed the '+pipe.Name);
+  xpGained := xpGained + (12.5);
+  progressReport;
+end;
+
+{*Clicks the Rope and waits till the attempt is successful. Will initiate Recover if it fails *}
+procedure ropeSwing();
+var
+  ropeTimer: TTimeMarker;
+  p: TPoint;
+begin
+  ropeTimer.start();
+  minimap.waitPlayerMoving(250);
+  repeat
+    if rope.Click() then
+      repeat
+        wait(gaussRangeInt(200,500));
+        if not (minimap.findSymbol(p,MM_SYMBOL_DUNGEON,minimap.getBounds())) then
+          if rope.recover then
+          begin
+            ropeTimer.start;
+            break;
+          end;
+        if conversationBox.isOpen() then
+        begin
+          wait(gaussRangeInt(100,300));
+          sDebug('Someone was already swinging, trying again');
+          break;
+        end;
+      until (chatbox.findText(['kilfully swing','wing across'])) or (ropeTimer.getTime > 30000);
+  until (chatbox.findText(['kilfully swing','wing across'])) or (ropeTimer.getTime > 30000);
+  if ropeTimer.getTime > 30000 then
+  begin
+    writeLn('Took too long to complete the '+rope.Name+', terminating');
+    terminateScript();
+  end;
+  sDebug('We have successfuly passed the '+rope.Name);
+  xpGained := xpGained + (20);
+  progressReport;
+end;
+
+{*Clicks the Stepping Stones, waits till they have been passed, and walks to the Log. Will Recover if failed*}
+procedure lavaSteps();
+var
+  lavaTimer:TTimeMarker;
+begin
+  lavaTimer.start();
+  repeat
+    minimap.waitPlayerMoving();
+    if lava.Click() then
+      repeat
+        if (chatbox.findTextOnLines(['he stepping stones'],[0])) then
+        begin
+          sDebug('We have started to cross the lava');
+          repeat
+            wait(gaussRangeInt(150,350));
+            if (chatbox.findTextOnLines(['the lava'],[0])) then
+            begin
+              sDebug('We have fallen into the lava');
+              lavaTimer.start;
+              break;
+            end;
+          until (chatbox.findText(['each the other','ther side safely'])) or (lavaTimer.getTime > 30000);
+          break;
+        end;
+      until (chatbox.findText(['each the other','ther side safely'])) or (lavaTimer.getTime > 30000);
+  until (chatbox.findText(['each the other','ther side safely'])) or (lavaTimer.getTime > 30000);
+  if lavaTimer.getTime > 30000 then
+  begin
+    writeLn('Took too long to complete the '+lava.Name+', terminating');
+    terminateScript();
+  end;
+  sDebug('We have successfuly walked across the '+lava.Name+', walking to the '+log.Name);
+  xpGained := xpGained + (20);
+  progressReport;
+  surface.walkToPos(point(190+randomRange(-2,2),127+randomRange(-2,2)),surface.getPlayerPos,false);
+end;
+
+{*Clicks the Wooden Log and waits till it has been passed. Initiates Recovery if failed*}
+procedure woodenLog();
+var
+  logTimer:TTimeMarker;
+  p: TPoint;
+begin
+  if minimap.isPlayerMoving(1500) then
+    minimap.waitPlayerMoving(250);
+  logTimer.start();
+  repeat
+    if log.Click() then
+      repeat
+        wait(gaussRangeInt(200,500));
+        if (not (minimap.findSymbol(p,MM_SYMBOL_DUNGEON,minimap.getBounds()))) and (chatbox.findTextOnLines(['ou slip','nd fall'],[0])) then
+          if log.recover then
+          begin
+            logTimer.start;
+            break;
+          end;
+      until (chatbox.findText(['kilfully edge','dge across'])) or (logTimer.getTime > 30000);
+  until (chatbox.findText(['kilfully edge','dge across'])) or (logTimer.getTime > 30000);
+  if logTimer.getTime > 30000 then
+  begin
+    writeLn('Took too long to complete the '+log.Name+', terminating');
+    terminateScript();
+  end;
+  wait(gaussRangeInt(200,400));
+  sDebug('We have successfuly walked across the '+log.Name+', walking to the Cliffside');
+  xpGained := xpGained + (20);
+  progressReport;
+end;
+
+{*Clicks the Cliffside, and waits till it reaches the other side, then walks to the starting point*}
+procedure wallClimb();
+var
+  wallTimer: TTimeMarker;
+begin
+  wallTimer.start;
+  repeat
+    mouseOval(285,317,10,20,MOUSE_MOVE);
+    if not (isMouseOverText(['ttack'],gaussRangeInt(150,250))) then
+    begin
+      fastClick(MOUSE_LEFT);
+      break;
+    end;
+  until (wallTimer.getTime > 30000);
+  repeat
+    if isMouseOverText(['limb Cliffside'],300) then
+    begin
+      wait(gaussRangeInt(50,200));
+      fastClick(MOUSE_LEFT);
+      sDebug('Found and clicked the Cliffside ');
+      break;
+    end;
+  until (wallTimer.getTime > 30000);
+  repeat
+    wait(gaussRangeInt(200,600));
+    if surface.isInBox(intToBox(150,161,171,175)) then
+    begin
+      sDebug('Succesfuly climbed the Cliffside');
+      break;
+    end;
+  until (surface.isInBox(intToBox(150,161,171,175))) or (wallTimer.getTime > 30000);
+  if (wallTimer.getTime > 30000) then
+  begin
+    writeLn('Took too long to climb the Cliffside, terminating script');
+    terminateScript();
+  end;
+  xpGained := xpGained + (499);
+  inc(lapsDone);
+  progressReport;
+  sDebug('Walking to the '+pipe.Name);
+  surface.walkToPos(point(199+randomRange(-2,2),161+randomRange(-2,2)),surface.getPlayerPos,false);
+  if minimap.isPlayerMoving(1500) then
+    minimap.waitPlayerMoving(250);
+end;
+
+procedure takeBreak();                   //Adapted from The Mayor's VEB Miner
+var
+  H, M, S, breakFor, timeLeft, ran: Integer;
+  breakDuration: TTimeMarker;
+begin
+  if (getSystemTime() >= BreakTime) then
+  begin
+    writeLn('Taking a Break');
+
+    if random(2) = 0 then
+      players[currentPlayer].logout()
+    else
+      players[currentPlayer].exitToLobby();
+
+    ran := round((players[currentPlayer].integers[2] * 60000) * 0.1);
+
+    breakFor := (players[currentPlayer].integers[2] * 60000) + randomRange(ran, -ran);
+    convertTime(breakFor, H, M, S);
+    writeLn('Taking a Break for: ' + toStr(H)+ 'h ' + toStr(M)+ 'm ' + toStr(S)+ 's');
+
+    breakDuration.start();
+
+    repeat
+      timeLeft := breakFor - breakDuration.getTime();
+      convertTime(timeLeft, H, M, S);
+      writeLn('Resuming in: ' + toStr(H)+ 'h ' + toStr(M)+ 'm ' + toStr(S)+ 's');
+      wait(25000 + random(4000));
+    until breakFor < breakDuration.getTime();
+
+    inc(b);
+    LoginProcedure();
+    resetBreakTimer();
+  end;
+end;
+
+{*Checks if the necessary files are present. All Credit goes to The Mayor*}
+procedure checkForFile(path, url, name: String);
+var
+  itemName: String;
+  itemFile: LongInt;
+begin
+  itemName := appPath + path;
+
+  if fileExists(itemName) then
+  begin
+    sDebug(name + ' already exists');
+    exit();
+  end;
+
+  writeLn('Downloading ' + name);
+  showMessage('You''re missing the ' + name + chr(13) + chr(13) + 'Downloading it now!');
+
+  closeFile(createFile(itemName));
+  itemFile := reWriteFile(itemName, false);
+  writeFileString(itemFile, getPage(url));
+  closeFile(itemFile);
+end;
+
+{*Will obtain the Latest Version of the script available online*}
+procedure autoUpdateMe();
+var
+  newFile: integer;
+  newScript, newFilePath: string;
+  online_Version: extended;
+begin
+  sDebug('Checking for updates');
+  online_Version := strToFloat(getPage('http://static.frement.net/proxy.php?u=https://raw.githubusercontent.com/SRLFady/WildernessAgility/master/VERSION.txt'));
+  sDebug('Local Version ' + toStr(Local_Version) + ', Online Version: ' + toStr(online_Version)+'.');
+
+  if online_Version > Local_Version then
+  begin
+    writeLn('Downloading the latest script version from GitHub');
+    newScript := getPage('http://static.frement.net/proxy.php?u=https://raw.githubusercontent.com/SRLFady/WildernessAgility/master/Fady%27s%20Wilderness%20Agility%20V1.0.simba');
+    newFilePath := scriptPath+ 'Fady Wilderness Agility V' + toStr(online_Version) +'.simba';
+    newFile := rewriteFile(newFilePath, true);
+
+    if not writeFileString(newFile, newScript) then
+    begin
+      writeLn('Could not write to ' + newFilePath);
+      terminatescript();
+    end;
+
+    closeFile(newFile);
+    writeLn('Latest script downloaded to ' + newFilePath);
+    writeLn('Please use the new one to run the latest version!');
+    terminateScript();
+  end else
+    sDebug('Local version is already up to date!');
+end;
+
+begin
+  clearDebug();
+  initPlayerForm();
+  runPlayerForm();
+  if (not playerForm.isScriptReady) then
+    exit;
+  declarePlayers();
+  autoUpdateMe();
+  checkForFile('Includes/SPS/img/runescape_surface/CourseSurface_0.png', 'http://i.imgur.com/3vZAOVm.png', 'Course Surface Map');
+  checkForFile('Includes/SPS/img/runescape_surface/CourseDungeon_0.png', 'http://i.imgur.com/OfIgCaI.png', 'Course Dungeon Map');
+  smartEnableDrawing := True;
+  smartShowConsole := false;
+  disableSRLDebug := players[currentPlayer].booleans[0];
+  setupSRL();
+  loadStuff();
+
+  loginProcedure();
+  resetBreakTimer();
+
+
+  repeat
+    if (actionBar.getHPPercent < 20) then
+    begin
+      writeLn('Health too low, Terminating Script');
+      terminateScript();
+    end;
+    courseStart();
+    ropeSwing();
+    lavaSteps();
+    woodenLog();
+    wallClimb();
+    takeBreak();
+  until (lapsDone = players[currentPlayer].integers[3]);
+end.
