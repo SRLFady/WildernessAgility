@@ -531,7 +531,7 @@ begin
   if online_Version > Local_Version then
   begin
     writeLn('Downloading the latest script version from GitHub');
-    newScript := getPage('http://static.frement.net/proxy.php?u=https://raw.githubusercontent.com/SRLFady/WildernessAgility/master/Fady%27s%20Wilderness%20Agility%20V1.0.simba');
+    newScript := getPage('http://static.frement.net/proxy.php?u=https://raw.githubusercontent.com/SRLFady/WildernessAgility/master/Fady%20Wilderness%20Agility.simba');
     newFilePath := scriptPath+ 'Fady Wilderness Agility V' + toStr(online_Version) +'.simba';
     newFile := rewriteFile(newFilePath, true);
 
