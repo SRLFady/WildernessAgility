@@ -18,7 +18,7 @@ program FadyWildernessAgility;
 
 Const
 {*Local Version*}
-  Local_Version := 1.0;
+  Local_Version := 1.1;
 
 {*These constants contain the information related to the various obstacles
   Only Modify these if the script stops working and you know what you're doing*}
@@ -75,6 +75,7 @@ end;
 
 var
   b, BreakTime,lapsDone, preHeal: integer;
+  scriptTimer: TTimeMarker;
   xpGained: extended;
   surface,dungeon: TSPSArea;
   outOfFood: Boolean;
@@ -87,28 +88,31 @@ begin
     name := 'Wilderness Agility';
     scriptHelpThread := 'https://villavu.com/forum/showthread.php?t=113782';
 
-    editBoxLabels := ['Preferred World','Play time Till Break','Break Duration','Laps to do','Food Key','Antiban Chance'];
-    editBoxDefaults := ['0','60','10','5000','2','2400'];
+    editBoxLabels := ['Preferred World','Play time Till Break','Break Duration','Laps to do','Antiban Chance','Food Key','Brawlers Key','Replacement Glove Key'];
+    editBoxDefaults := ['0','60','10','5000','2400','9','8','7'];
     editBoxHints := [
     'Pick a world or 0 for random or -1 for "Play Now"',
     'Amount of time in minutes till a break is called',
     'How long you want your breaks to be, also in minutes',
     'How many laps do you want to do',
+    'The larger the number the lower the chance of antiban',
     'Where is the food located on the actionbar',
-    'The larger the number the lower the chance of antiban'];
+    'Where are the brawler gloves located on the action bar, ignore this if you arent using them',
+    'Where are the replacement gloves located on the action bar, ignore this if you arent using brawlers'];
 
-    checkBoxLabels := ['Disable SRL Debug?', 'Disable Script Debug?'];
-    checkBoxDefaults := ['True','True'];
+    checkBoxLabels := ['Disable SRL Debug?', 'Disable Script Debug?','Using Agility Brawlers?'];
+    checkBoxDefaults := ['True','True','False'];
     checkBoxHints := [
     'Do you want to Disable SRL Debug?',
-    'Do you want to Disable the Script Debug?'];
+    'Do you want to Disable the Script Debug?',
+    'Are you going to be using Agility Brawlers?'];
 
   end;
 end;
 
 procedure declarePlayers();
 var
-  i: integer;
+  i,j: integer;
 begin
   players.setup(playerForm.players);
   currentPlayer := 0;
@@ -116,16 +120,12 @@ begin
   for i := 0 to high(players) do
     with players[i] do
     begin
-      integers[0] := strToInt(playerForm.players[i].settings[0]);
-      integers[1] := strToInt(playerForm.players[i].settings[1]);
-      integers[2] := strToInt(playerForm.players[i].settings[2]);
-      integers[3] := strToInt(playerForm.players[i].settings[3]);
-      integers[4] := strToInt(playerForm.players[i].settings[5]);
-
-      booleans[0] := strToBool(playerForm.players[i].settings[6]);
-      booleans[1] := strToBool(playerForm.players[i].settings[7]);
-
-      strings[0] := playerForm.players[i].settings[4];
+      for j := 0 to 4 do
+        integers[j] := strToInt(playerForm.players[i].settings[j]);
+      for j := 0 to 2 do
+       booleans[j] := strToBool(playerForm.players[i].settings[j+8]);
+      for j := 0 to 2 do
+      strings[j] := playerForm.players[i].settings[j+5];
 
       world := integers[0];
     end;
@@ -208,7 +208,7 @@ begin
       begin
         logMidPoint := middleTPA(ATPA[i]);
         logBox[i] := intToBox(logMidPoint.X-20,logMidPoint.Y-10,logMidPoint.X+3,logMidPoint.Y+10);
-        mouseBox(logBox[i],MOUSE_MOVE);
+        mouse(logBox[i].getRandomPoint());
       end else
         mouse(ATPA[i].getBounds().getRandomPoint());
       wait(gaussRangeInt(80,150));
@@ -248,7 +248,7 @@ begin
   recoverTimer.start
   repeat
     if not (distance(point(213,112),dungeon.getPlayerPos()) < 50) then
-      if dungeon.walkToPos(point(213+randomRange(-2,2),112+randomRange(-2,2)),dungeon.getPlayerPos(),true,300) then
+      if dungeon.walkToPos(point(213+randomRange(-2,2),112+randomRange(-2,2)),dungeon.getPlayerPos(),true,500) then
         sDebug('Walked successfuly to the ladder');
     if ladder.Click then
       repeat
@@ -264,7 +264,7 @@ begin
           wait(gaussRangeInt(200,500));
           surface.walkToPos(self.recoverPoint,surface.getPlayerPos,false);
           if minimap.isPlayerMoving(1500) then
-            minimap.waitPlayerMoving(250);
+            minimap.waitPlayerMoving(175);
           exit(true);
         end;
       until (recoverTimer.getTime > 45000);
@@ -281,7 +281,7 @@ procedure progressReport();
 begin
   clearDebug;
   writeLn('XP Gained: '+toStr(xpGained));
-  writeLn('XP/HR: ' +toStr(round(xpGained/(getTimeRunning/3600000))));
+  writeLn('XP/HR: ' +toStr(round(xpGained/(scriptTimer.getTime()/3600000))));
   writeLn('Laps Done: '+toStr(lapsDone));
   writeln('Time Running: ' +timeRunning);
   writeln('Breaks Taken: ' +toStr(b));
@@ -389,7 +389,7 @@ var
   p: TPoint;
 begin
   if minimap.isPlayerMoving(1500) then
-    minimap.waitPlayerMoving(250);
+    minimap.waitPlayerMoving(175);
   logTimer.start();
   repeat
     if log.Click() then
@@ -428,10 +428,15 @@ begin
       break;
     end;
   until (wallTimer.getTime > 30000);
+  if players[currentPlayer].booleans[2] then
+  begin
+    wait(gaussRangeInt(50,200));
+    typeSend(players[currentPlayer].strings[1],false);
+  end;
   repeat
     if isMouseOverText(['limb Cliffside'],300) then
     begin
-      wait(gaussRangeInt(50,200));
+      wait(gaussRangeInt(50,150));
       fastClick(MOUSE_LEFT);
       sDebug('Found and clicked the Cliffside ');
       break;
@@ -450,13 +455,19 @@ begin
     writeLn('Took too long to climb the Cliffside, terminating script');
     terminateScript();
   end;
-  xpGained := xpGained + (499);
-  inc(lapsDone);
-  progressReport;
   sDebug('Walking to the '+pipe.Name);
   surface.walkToPos(point(199+randomRange(-2,2),161+randomRange(-2,2)),surface.getPlayerPos,false);
-  if minimap.isPlayerMoving(1500) then
-    minimap.waitPlayerMoving(250);
+  if players[currentPlayer].booleans[2] then
+  begin
+    wait(gaussRangeInt(50,200));
+    typeSend(players[currentPlayer].strings[2],false);
+    xpGained := xpGained + (1996);
+  end else
+    xpGained := xpGained + (499);
+  inc(lapsDone);
+  progressReport;
+  if minimap.isPlayerMoving(1200) then
+    minimap.waitPlayerMoving(175);
 end;
 
 procedure takeBreak();                   //Adapted from The Mayor's VEB Miner
@@ -567,7 +578,7 @@ begin
 
   loginProcedure();
   resetBreakTimer();
-
+  scriptTimer.start();
 
   repeat
     if (actionBar.getHPPercent < 20) then
